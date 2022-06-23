@@ -4,10 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strconv"
-
 	tmbytes "github.com/tendermint/tendermint/libs/bytes"
 	tmtypes "github.com/tendermint/tendermint/types"
+	"strconv"
+	"time"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
@@ -28,11 +28,20 @@ func (k *Keeper) EthereumTx(goCtx context.Context, msg *types.MsgEthereumTx) (*t
 	tx := msg.AsTransaction()
 	txIndex := k.GetTxIndexTransient(ctx)
 
+	//timeBegin := time.Now().UnixNano()
+	timeBegin := time.Now().UnixNano()
+
 	response, err := k.ApplyTransaction(ctx, tx)
+	//timeEnd := time.Now().UnixNano()
+	//fmt.Printf("apply Transaction cost time:%d\n", timeEnd-timeBegin)
+
+	timeEnd := time.Now().UnixNano()
+
 	if err != nil {
 		return nil, sdkerrors.Wrap(err, "failed to apply transaction")
 	}
 
+	//timeBegin := time.Now().UnixNano()
 	attrs := []sdk.Attribute{
 		sdk.NewAttribute(sdk.AttributeKeyAmount, tx.Value().String()),
 		// add event for ethereum transaction hash format
@@ -83,6 +92,7 @@ func (k *Keeper) EthereumTx(goCtx context.Context, msg *types.MsgEthereumTx) (*t
 			sdk.NewAttribute(types.AttributeKeyTxType, fmt.Sprintf("%d", tx.Type())),
 		),
 	})
+	fmt.Printf("ethereum tx cost time interval:%d\n", timeEnd-timeBegin)
 
 	return response, nil
 }

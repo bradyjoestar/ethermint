@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math/big"
 	"sort"
+	"time"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
@@ -443,6 +444,7 @@ func (s *StateDB) Commit() error {
 				return sdkerrors.Wrap(err, "failed to delete account")
 			}
 		} else {
+			timeBegin := time.Now().UnixNano()
 			if obj.code != nil && obj.dirtyCode {
 				s.keeper.SetCode(s.ctx, obj.CodeHash(), obj.code)
 			}
@@ -457,6 +459,8 @@ func (s *StateDB) Commit() error {
 				}
 				s.keeper.SetState(s.ctx, obj.Address(), key, value.Bytes())
 			}
+			timeEnd := time.Now().UnixNano()
+			fmt.Printf("statedb.go: commit time interval:%d\n", timeEnd-timeBegin)
 		}
 	}
 	return nil

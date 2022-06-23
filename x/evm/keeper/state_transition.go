@@ -1,8 +1,10 @@
 package keeper
 
 import (
+	"fmt"
 	"math"
 	"math/big"
+	"time"
 
 	tmtypes "github.com/tendermint/tendermint/types"
 
@@ -204,7 +206,9 @@ func (k *Keeper) ApplyTransaction(ctx sdk.Context, tx *ethtypes.Transaction) (*t
 
 	// get the signer according to the chain rules from the config and block height
 	signer := ethtypes.MakeSigner(cfg.ChainConfig, big.NewInt(ctx.BlockHeight()))
+	timeBegin1 := time.Now().UnixNano()
 	msg, err := tx.AsMessage(signer, cfg.BaseFee)
+	timeEnd1 := time.Now().UnixNano()
 	if err != nil {
 		return nil, sdkerrors.Wrap(err, "failed to return ethereum transaction as core message")
 	}
@@ -221,10 +225,13 @@ func (k *Keeper) ApplyTransaction(ctx sdk.Context, tx *ethtypes.Transaction) (*t
 	}
 
 	// pass true to commit the StateDB
+	//timeBegin := time.Now().UnixNano()
 	res, err := k.ApplyMessageWithConfig(tmpCtx, msg, nil, true, cfg, txConfig)
 	if err != nil {
 		return nil, sdkerrors.Wrap(err, "failed to apply ethereum core message")
 	}
+	//timeEnd := time.Now().UnixNano()
+	//fmt.Printf("ApplyMessageWithConfig Time Interval: %d\n", timeEnd-timeBegin)
 
 	logs := types.LogsToEthereum(res.Logs)
 
@@ -269,12 +276,16 @@ func (k *Keeper) ApplyTransaction(ctx sdk.Context, tx *ethtypes.Transaction) (*t
 			res.VmError = types.ErrPostTxProcessing.Error()
 			k.Logger(ctx).Error("tx post processing failed", "error", err)
 		} else if commit != nil {
+			timeBegin := time.Now().UnixNano()
 			// PostTxProcessing is successful, commit the tmpCtx
 			commit()
+			timeEnd := time.Now().UnixNano()
+			fmt.Printf("hook commit time interval:%d\n", timeEnd-timeBegin)
 			ctx.EventManager().EmitEvents(tmpCtx.EventManager().Events())
 		}
 	}
 
+	timeBegin := time.Now().UnixNano()
 	// refund gas in order to match the Ethereum gas consumption instead of the default SDK one.
 	if err = k.RefundGas(ctx, msg, msg.Gas()-res.GasUsed, cfg.Params.EvmDenom); err != nil {
 		return nil, sdkerrors.Wrapf(err, "failed to refund gas leftover gas to sender %s", msg.From())
@@ -295,6 +306,12 @@ func (k *Keeper) ApplyTransaction(ctx sdk.Context, tx *ethtypes.Transaction) (*t
 
 	// reset the gas meter for current cosmos transaction
 	k.ResetGasMeterAndConsumeGas(ctx, totalGasUsed)
+
+	timeEnd := time.Now().UnixNano()
+
+	fmt.Printf("applymessage total time interval1:%d\n", timeEnd1-timeBegin1)
+	fmt.Printf("applymessage total time interval2:%d\n", timeEnd-timeBegin)
+
 	return res, nil
 }
 
@@ -337,6 +354,7 @@ func (k *Keeper) ApplyTransaction(ctx sdk.Context, tx *ethtypes.Transaction) (*t
 //
 // If commit is true, the `StateDB` will be committed, otherwise discarded.
 func (k *Keeper) ApplyMessageWithConfig(ctx sdk.Context, msg core.Message, tracer vm.EVMLogger, commit bool, cfg *types.EVMConfig, txConfig statedb.TxConfig) (*types.MsgEthereumTxResponse, error) {
+	timeBegin1 := time.Now().UnixNano()
 	var (
 		ret   []byte // return bytes from evm execution
 		vmErr error  // vm errors do not effect consensus and are therefore not assigned to err
@@ -402,6 +420,7 @@ func (k *Keeper) ApplyMessageWithConfig(ctx sdk.Context, msg core.Message, trace
 		return nil, sdkerrors.Wrap(types.ErrGasOverflow, "apply message")
 	}
 	gasUsed -= refund
+	timeEnd1 := time.Now().UnixNano()
 
 	// EVM execution error needs to be available for the JSON-RPC client
 	var vmError string
@@ -410,11 +429,15 @@ func (k *Keeper) ApplyMessageWithConfig(ctx sdk.Context, msg core.Message, trace
 	}
 
 	// The dirty states in `StateDB` is either committed or discarded after return
+	timeBegin := time.Now().UnixNano()
 	if commit {
 		if err := stateDB.Commit(); err != nil {
 			return nil, sdkerrors.Wrap(err, "failed to commit stateDB")
 		}
 	}
+	timeEnd := time.Now().UnixNano()
+	fmt.Printf("evm run transaction:%d\n", timeEnd1-timeBegin1)
+	fmt.Printf("state_transition.go: stateDB commit time Interval:%d\n", timeEnd-timeBegin)
 
 	return &types.MsgEthereumTxResponse{
 		GasUsed: gasUsed,

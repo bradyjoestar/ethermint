@@ -2,7 +2,9 @@ package ante
 
 import (
 	"errors"
+	"fmt"
 	"math/big"
+	"time"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
@@ -35,6 +37,8 @@ func NewEthSigVerificationDecorator(ek EVMKeeper) EthSigVerificationDecorator {
 // Failure in RecheckTx will prevent tx to be included into block, especially when CheckTx succeed, in which case user
 // won't see the error message.
 func (esvd EthSigVerificationDecorator) AnteHandle(ctx sdk.Context, tx sdk.Tx, simulate bool, next sdk.AnteHandler) (newCtx sdk.Context, err error) {
+	timeBegin := time.Now().UnixNano()
+
 	chainID := esvd.evmKeeper.ChainID()
 
 	params := esvd.evmKeeper.GetParams(ctx)
@@ -48,8 +52,10 @@ func (esvd EthSigVerificationDecorator) AnteHandle(ctx sdk.Context, tx sdk.Tx, s
 		if !ok {
 			return ctx, sdkerrors.Wrapf(sdkerrors.ErrUnknownRequest, "invalid message type %T, expected %T", msg, (*evmtypes.MsgEthereumTx)(nil))
 		}
-
+		timePointBefore := time.Now().UnixMicro()
 		sender, err := signer.Sender(msgEthTx.AsTransaction())
+		timePointAfter := time.Now().UnixMicro()
+		fmt.Printf("EthSigVerificationDecorator Verify Signature Time Interval: %d\n", timePointAfter-timePointBefore)
 		if err != nil {
 			return ctx, sdkerrors.Wrapf(
 				sdkerrors.ErrorInvalidSigner,
@@ -62,6 +68,9 @@ func (esvd EthSigVerificationDecorator) AnteHandle(ctx sdk.Context, tx sdk.Tx, s
 		// set up the sender to the transaction field if not already
 		msgEthTx.From = sender.Hex()
 	}
+
+	timeEnd := time.Now().UnixNano()
+	fmt.Printf("EthSigVerificationDecorator time interval:%d\n", timeEnd-timeBegin)
 
 	return next(ctx, tx, simulate)
 }
@@ -92,6 +101,7 @@ func (avd EthAccountVerificationDecorator) AnteHandle(ctx sdk.Context, tx sdk.Tx
 	if !ctx.IsCheckTx() {
 		return next(ctx, tx, simulate)
 	}
+	timeBegin := time.Now().UnixNano()
 
 	for i, msg := range tx.GetMsgs() {
 		msgEthTx, ok := msg.(*evmtypes.MsgEthereumTx)
@@ -128,6 +138,10 @@ func (avd EthAccountVerificationDecorator) AnteHandle(ctx sdk.Context, tx sdk.Tx
 		}
 
 	}
+
+	timeEnd := time.Now().UnixNano()
+	fmt.Printf("EthAccountVerificationDecorator time interval:%d\n", timeEnd-timeBegin)
+
 	return next(ctx, tx, simulate)
 }
 
@@ -164,6 +178,7 @@ func NewEthGasConsumeDecorator(
 // - transaction or block gas meter runs out of gas
 // - sets the gas meter limit
 func (egcd EthGasConsumeDecorator) AnteHandle(ctx sdk.Context, tx sdk.Tx, simulate bool, next sdk.AnteHandler) (newCtx sdk.Context, err error) {
+	timeBegin := time.Now().UnixNano()
 	params := egcd.evmKeeper.GetParams(ctx)
 
 	ethCfg := params.ChainConfig.EthereumConfig(egcd.evmKeeper.ChainID())
@@ -233,6 +248,9 @@ func (egcd EthGasConsumeDecorator) AnteHandle(ctx sdk.Context, tx sdk.Tx, simula
 	ctx = ctx.WithGasMeter(ethermint.NewInfiniteGasMeterWithLimit(gasWanted))
 	ctx.GasMeter().ConsumeGas(gasConsumed, "copy gas consumed")
 
+	timeEnd := time.Now().UnixNano()
+	fmt.Printf("EthGasConsumeDecorator time interval:%d\n", timeEnd-timeBegin)
+
 	// we know that we have enough gas on the pool to cover the intrinsic gas
 	return next(ctx, tx, simulate)
 }
@@ -253,6 +271,8 @@ func NewCanTransferDecorator(evmKeeper EVMKeeper) CanTransferDecorator {
 // AnteHandle creates an EVM from the message and calls the BlockContext CanTransfer function to
 // see if the address can execute the transaction.
 func (ctd CanTransferDecorator) AnteHandle(ctx sdk.Context, tx sdk.Tx, simulate bool, next sdk.AnteHandler) (sdk.Context, error) {
+	timeBegin := time.Now().UnixNano()
+
 	params := ctd.evmKeeper.GetParams(ctx)
 	ethCfg := params.ChainConfig.EthereumConfig(ctd.evmKeeper.ChainID())
 	signer := ethtypes.MakeSigner(ethCfg, big.NewInt(ctx.BlockHeight()))
@@ -265,7 +285,10 @@ func (ctd CanTransferDecorator) AnteHandle(ctx sdk.Context, tx sdk.Tx, simulate 
 
 		baseFee := ctd.evmKeeper.BaseFee(ctx, ethCfg)
 
+		timeBegin := time.Now().UnixNano()
 		coreMsg, err := msgEthTx.AsMessage(signer, baseFee)
+		timeEnd := time.Now().UnixNano()
+		fmt.Printf("CanTransferDecorator As Message Time Interval: %d\n", timeEnd-timeBegin)
 		if err != nil {
 			return ctx, sdkerrors.Wrapf(
 				err,
@@ -281,7 +304,10 @@ func (ctd CanTransferDecorator) AnteHandle(ctx sdk.Context, tx sdk.Tx, simulate 
 			BaseFee:     baseFee,
 		}
 		stateDB := statedb.New(ctx, ctd.evmKeeper, statedb.NewEmptyTxConfig(common.BytesToHash(ctx.HeaderHash().Bytes())))
+		timeBegin = time.Now().UnixNano()
 		evm := ctd.evmKeeper.NewEVM(ctx, coreMsg, cfg, evmtypes.NewNoOpTracer(), stateDB)
+		timeEnd = time.Now().UnixNano()
+		fmt.Printf("NewEVM Time Interval: %d\n", timeEnd-timeBegin)
 
 		// check that caller has enough balance to cover asset transfer for **topmost** call
 		// NOTE: here the gas consumed is from the context with the infinite gas meter
@@ -311,6 +337,8 @@ func (ctd CanTransferDecorator) AnteHandle(ctx sdk.Context, tx sdk.Tx, simulate 
 		}
 	}
 
+	timeEnd := time.Now().UnixNano()
+	fmt.Printf("CanTransferDecorator time interval:%d\n", timeEnd-timeBegin)
 	return next(ctx, tx, simulate)
 }
 
@@ -330,6 +358,8 @@ func NewEthIncrementSenderSequenceDecorator(ak evmtypes.AccountKeeper) EthIncrem
 // contract creation, the nonce will be incremented during the transaction execution and not within
 // this AnteHandler decorator.
 func (issd EthIncrementSenderSequenceDecorator) AnteHandle(ctx sdk.Context, tx sdk.Tx, simulate bool, next sdk.AnteHandler) (sdk.Context, error) {
+	timeBegin := time.Now().UnixNano()
+
 	for _, msg := range tx.GetMsgs() {
 		msgEthTx, ok := msg.(*evmtypes.MsgEthereumTx)
 		if !ok {
@@ -367,6 +397,9 @@ func (issd EthIncrementSenderSequenceDecorator) AnteHandle(ctx sdk.Context, tx s
 		issd.ak.SetAccount(ctx, acc)
 	}
 
+	timeEnd := time.Now().UnixNano()
+	fmt.Printf("EthIncrementSenderSequenceDecorator time interval:%d\n", timeEnd-timeBegin)
+
 	return next(ctx, tx, simulate)
 }
 
@@ -384,6 +417,7 @@ func NewEthValidateBasicDecorator(ek EVMKeeper) EthValidateBasicDecorator {
 
 // AnteHandle handles basic validation of tx
 func (vbd EthValidateBasicDecorator) AnteHandle(ctx sdk.Context, tx sdk.Tx, simulate bool, next sdk.AnteHandler) (sdk.Context, error) {
+	timeBegin := time.Now().UnixNano()
 	// no need to validate basic on recheck tx, call next antehandler
 	if ctx.IsReCheckTx() {
 		return next(ctx, tx, simulate)
@@ -458,6 +492,9 @@ func (vbd EthValidateBasicDecorator) AnteHandle(ctx sdk.Context, tx sdk.Tx, simu
 		}
 	}
 
+	timeEnd := time.Now().UnixNano()
+	fmt.Printf("EthValidateBasicDecorator time interval:%d\n", timeEnd-timeBegin)
+
 	return next(ctx, tx, simulate)
 }
 
@@ -474,6 +511,7 @@ func NewEthSetUpContextDecorator(evmKeeper EVMKeeper) EthSetupContextDecorator {
 }
 
 func (esc EthSetupContextDecorator) AnteHandle(ctx sdk.Context, tx sdk.Tx, simulate bool, next sdk.AnteHandler) (newCtx sdk.Context, err error) {
+	timeBegin := time.Now().UnixNano()
 	// all transactions must implement GasTx
 	_, ok := tx.(authante.GasTx)
 	if !ok {
@@ -484,6 +522,8 @@ func (esc EthSetupContextDecorator) AnteHandle(ctx sdk.Context, tx sdk.Tx, simul
 	// Reset transient gas used to prepare the execution of current cosmos tx.
 	// Transient gas-used is necessary to sum the gas-used of cosmos tx, when it contains multiple eth msgs.
 	esc.evmKeeper.ResetTransientGasUsed(ctx)
+	timeEnd := time.Now().UnixNano()
+	fmt.Printf("EthSetupContextDecorator time interval:%d\n", timeEnd-timeBegin)
 	return next(newCtx, tx, simulate)
 }
 
@@ -508,6 +548,7 @@ func NewEthMempoolFeeDecorator(ek EVMKeeper) EthMempoolFeeDecorator {
 // is only ran on check tx.
 // It only do the check if london hardfork not enabled or feemarket not enabled, because in that case feemarket will take over the task.
 func (mfd EthMempoolFeeDecorator) AnteHandle(ctx sdk.Context, tx sdk.Tx, simulate bool, next sdk.AnteHandler) (newCtx sdk.Context, err error) {
+	timeBegin := time.Now().UnixNano()
 	if ctx.IsCheckTx() && !simulate {
 		params := mfd.evmKeeper.GetParams(ctx)
 		ethCfg := params.ChainConfig.EthereumConfig(mfd.evmKeeper.ChainID())
@@ -530,5 +571,7 @@ func (mfd EthMempoolFeeDecorator) AnteHandle(ctx sdk.Context, tx sdk.Tx, simulat
 		}
 	}
 
+	timeEnd := time.Now().UnixNano()
+	fmt.Printf("EthMempoolFeeDecorator time interval:%d\n", timeEnd-timeBegin)
 	return next(ctx, tx, simulate)
 }
