@@ -543,7 +543,8 @@ func (e *PublicAPI) SendRawTransaction(data hexutil.Bytes) (common.Hash, error) 
 		err = sdkerrors.ABCIError(rsp.Codespace, rsp.Code, rsp.RawLog)
 	}
 	if err != nil {
-		e.logger.Error("failed to broadcast tx", "error", err.Error())
+		//tmp ignore errorLog
+		//e.logger.Error("failed to broadcast tx", "error", err.Error())
 		return txHash, err
 	}
 
