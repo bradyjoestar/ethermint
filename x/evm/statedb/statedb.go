@@ -2,16 +2,14 @@ package statedb
 
 import (
 	"fmt"
-	"math/big"
-	"sort"
-	"time"
-
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
 	"github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
+	"math/big"
+	"sort"
 )
 
 // revision is the identifier of a version of state.
@@ -444,13 +442,13 @@ func (s *StateDB) Commit() error {
 				return sdkerrors.Wrap(err, "failed to delete account")
 			}
 		} else {
-			timeBegin := time.Now().UnixNano()
 			if obj.code != nil && obj.dirtyCode {
 				s.keeper.SetCode(s.ctx, obj.CodeHash(), obj.code)
 			}
 			if err := s.keeper.SetAccount(s.ctx, obj.Address(), obj.account); err != nil {
 				return sdkerrors.Wrap(err, "failed to set account")
 			}
+
 			for _, key := range obj.dirtyStorage.SortedKeys() {
 				value := obj.dirtyStorage[key]
 				// Skip noop changes, persist actual changes
@@ -459,8 +457,6 @@ func (s *StateDB) Commit() error {
 				}
 				s.keeper.SetState(s.ctx, obj.Address(), key, value.Bytes())
 			}
-			timeEnd := time.Now().UnixNano()
-			fmt.Printf("statedb.go: commit time interval:%d\n", timeEnd-timeBegin)
 		}
 	}
 	return nil

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"math/big"
+	"time"
 
 	"github.com/cosmos/cosmos-sdk/store/prefix"
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -83,15 +84,21 @@ func (k *Keeper) SetBalance(ctx sdk.Context, addr common.Address, amount *big.In
 		if err := k.bankKeeper.MintCoins(ctx, types.ModuleName, coins); err != nil {
 			return err
 		}
+		timeBeginPoint2 := time.Now().UnixNano()
 		if err := k.bankKeeper.SendCoinsFromModuleToAccount(ctx, types.ModuleName, cosmosAddr, coins); err != nil {
 			return err
 		}
+		timeEndPoint2 := time.Now().UnixNano()
+		fmt.Printf("statedb commit setAccount mint coins:%d\n", timeEndPoint2-timeBeginPoint2)
 	case -1:
 		// burn
 		coins := sdk.NewCoins(sdk.NewCoin(params.EvmDenom, sdk.NewIntFromBigInt(new(big.Int).Neg(delta))))
+		timeBeginPoint2 := time.Now().UnixNano()
 		if err := k.bankKeeper.SendCoinsFromAccountToModule(ctx, cosmosAddr, types.ModuleName, coins); err != nil {
 			return err
 		}
+		timeEndPoint2 := time.Now().UnixNano()
+		fmt.Printf("statedb commit setAccount burn coins:%d\n", timeEndPoint2-timeBeginPoint2)
 		if err := k.bankKeeper.BurnCoins(ctx, types.ModuleName, coins); err != nil {
 			return err
 		}
