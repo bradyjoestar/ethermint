@@ -20,12 +20,15 @@ import (
 // EthSigVerificationDecorator validates an ethereum signatures
 type EthSigVerificationDecorator struct {
 	evmKeeper EVMKeeper
+	TxCache   *TxCache
 }
 
 // NewEthSigVerificationDecorator creates a new EthSigVerificationDecorator
-func NewEthSigVerificationDecorator(ek EVMKeeper) EthSigVerificationDecorator {
+func NewEthSigVerificationDecorator(ek EVMKeeper,
+	txCache *TxCache) EthSigVerificationDecorator {
 	return EthSigVerificationDecorator{
 		evmKeeper: ek,
+		TxCache:   txCache,
 	}
 }
 
@@ -45,18 +48,25 @@ func (esvd EthSigVerificationDecorator) AnteHandle(ctx sdk.Context, tx sdk.Tx, s
 
 	for _, msg := range tx.GetMsgs() {
 		msgEthTx, ok := msg.(*evmtypes.MsgEthereumTx)
+
 		if !ok {
 			return ctx, sdkerrors.Wrapf(sdkerrors.ErrUnknownRequest, "invalid message type %T, expected %T", msg, (*evmtypes.MsgEthereumTx)(nil))
 		}
 
-		sender, err := signer.Sender(msgEthTx.AsTransaction())
-		if err != nil {
-			return ctx, sdkerrors.Wrapf(
-				sdkerrors.ErrorInvalidSigner,
-				"couldn't retrieve sender address ('%s') from the ethereum transaction: %s",
-				msgEthTx.From,
-				err.Error(),
-			)
+		var sender common.Address
+		if cachedObject, ok := esvd.TxCache.HashMap[msgEthTx.Hash]; !ok {
+			sender, err = signer.Sender(msgEthTx.AsTransaction())
+			esvd.TxCache.HashMap[msgEthTx.Hash] = NewTxCacheObject(sender)
+			if err != nil {
+				return ctx, sdkerrors.Wrapf(
+					sdkerrors.ErrorInvalidSigner,
+					"couldn't retrieve sender address ('%s') from the ethereum transaction: %s",
+					msgEthTx.From,
+					err.Error(),
+				)
+			}
+		} else {
+			sender = cachedObject.Signer
 		}
 
 		// set up the sender to the transaction field if not already
@@ -71,14 +81,16 @@ type EthAccountVerificationDecorator struct {
 	ak         evmtypes.AccountKeeper
 	bankKeeper evmtypes.BankKeeper
 	evmKeeper  EVMKeeper
+	txCache    *TxCache
 }
 
 // NewEthAccountVerificationDecorator creates a new EthAccountVerificationDecorator
-func NewEthAccountVerificationDecorator(ak evmtypes.AccountKeeper, bankKeeper evmtypes.BankKeeper, ek EVMKeeper) EthAccountVerificationDecorator {
+func NewEthAccountVerificationDecorator(ak evmtypes.AccountKeeper, bankKeeper evmtypes.BankKeeper, ek EVMKeeper, txCache *TxCache) EthAccountVerificationDecorator {
 	return EthAccountVerificationDecorator{
 		ak:         ak,
 		bankKeeper: bankKeeper,
 		evmKeeper:  ek,
+		txCache:    txCache,
 	}
 }
 
@@ -136,16 +148,19 @@ func (avd EthAccountVerificationDecorator) AnteHandle(ctx sdk.Context, tx sdk.Tx
 type EthGasConsumeDecorator struct {
 	evmKeeper    EVMKeeper
 	maxGasWanted uint64
+	txCache      *TxCache
 }
 
 // NewEthGasConsumeDecorator creates a new EthGasConsumeDecorator
 func NewEthGasConsumeDecorator(
 	evmKeeper EVMKeeper,
 	maxGasWanted uint64,
+	txCache *TxCache,
 ) EthGasConsumeDecorator {
 	return EthGasConsumeDecorator{
 		evmKeeper,
 		maxGasWanted,
+		txCache,
 	}
 }
 
@@ -241,12 +256,14 @@ func (egcd EthGasConsumeDecorator) AnteHandle(ctx sdk.Context, tx sdk.Tx, simula
 // context rules.
 type CanTransferDecorator struct {
 	evmKeeper EVMKeeper
+	txCache   *TxCache
 }
 
 // NewCanTransferDecorator creates a new CanTransferDecorator instance.
-func NewCanTransferDecorator(evmKeeper EVMKeeper) CanTransferDecorator {
+func NewCanTransferDecorator(evmKeeper EVMKeeper, txCache *TxCache) CanTransferDecorator {
 	return CanTransferDecorator{
 		evmKeeper: evmKeeper,
+		txCache:   txCache,
 	}
 }
 
@@ -316,13 +333,15 @@ func (ctd CanTransferDecorator) AnteHandle(ctx sdk.Context, tx sdk.Tx, simulate 
 
 // EthIncrementSenderSequenceDecorator increments the sequence of the signers.
 type EthIncrementSenderSequenceDecorator struct {
-	ak evmtypes.AccountKeeper
+	ak      evmtypes.AccountKeeper
+	txCache *TxCache
 }
 
 // NewEthIncrementSenderSequenceDecorator creates a new EthIncrementSenderSequenceDecorator.
-func NewEthIncrementSenderSequenceDecorator(ak evmtypes.AccountKeeper) EthIncrementSenderSequenceDecorator {
+func NewEthIncrementSenderSequenceDecorator(ak evmtypes.AccountKeeper, txCache *TxCache) EthIncrementSenderSequenceDecorator {
 	return EthIncrementSenderSequenceDecorator{
-		ak: ak,
+		ak:      ak,
+		txCache: txCache,
 	}
 }
 
@@ -373,12 +392,14 @@ func (issd EthIncrementSenderSequenceDecorator) AnteHandle(ctx sdk.Context, tx s
 // EthValidateBasicDecorator is adapted from ValidateBasicDecorator from cosmos-sdk, it ignores ErrNoSignatures
 type EthValidateBasicDecorator struct {
 	evmKeeper EVMKeeper
+	txCache   *TxCache
 }
 
 // NewEthValidateBasicDecorator creates a new EthValidateBasicDecorator
-func NewEthValidateBasicDecorator(ek EVMKeeper) EthValidateBasicDecorator {
+func NewEthValidateBasicDecorator(ek EVMKeeper, txCache *TxCache) EthValidateBasicDecorator {
 	return EthValidateBasicDecorator{
 		evmKeeper: ek,
+		txCache:   txCache,
 	}
 }
 
@@ -465,11 +486,13 @@ func (vbd EthValidateBasicDecorator) AnteHandle(ctx sdk.Context, tx sdk.Tx, simu
 // by setting the gas meter to infinite
 type EthSetupContextDecorator struct {
 	evmKeeper EVMKeeper
+	txCache   *TxCache
 }
 
-func NewEthSetUpContextDecorator(evmKeeper EVMKeeper) EthSetupContextDecorator {
+func NewEthSetUpContextDecorator(evmKeeper EVMKeeper, txCache *TxCache) EthSetupContextDecorator {
 	return EthSetupContextDecorator{
 		evmKeeper: evmKeeper,
+		txCache:   txCache,
 	}
 }
 
@@ -495,11 +518,13 @@ func (esc EthSetupContextDecorator) AnteHandle(ctx sdk.Context, tx sdk.Tx, simul
 // CONTRACT: Tx must implement FeeTx to use MempoolFeeDecorator
 type EthMempoolFeeDecorator struct {
 	evmKeeper EVMKeeper
+	txCache   *TxCache
 }
 
-func NewEthMempoolFeeDecorator(ek EVMKeeper) EthMempoolFeeDecorator {
+func NewEthMempoolFeeDecorator(ek EVMKeeper, txCache *TxCache) EthMempoolFeeDecorator {
 	return EthMempoolFeeDecorator{
 		evmKeeper: ek,
+		txCache:   txCache,
 	}
 }
 
