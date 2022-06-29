@@ -281,8 +281,8 @@ func (ctd CanTransferDecorator) AnteHandle(ctx sdk.Context, tx sdk.Tx, simulate 
 		}
 
 		baseFee := ctd.evmKeeper.BaseFee(ctx, ethCfg)
+		coreMsg, err := AsMessage(msgEthTx, signer, baseFee)
 
-		coreMsg, err := msgEthTx.AsMessage(signer, baseFee)
 		if err != nil {
 			return ctx, sdkerrors.Wrapf(
 				err,
