@@ -36,14 +36,22 @@ func NewTxCacheObject(from common.Address) TxCacheObject {
 	}
 }
 
-func AsMessage(msg *evmtypes.MsgEthereumTx, signer ethtypes.Signer, baseFee *big.Int) (core.Message, error) {
+func (txCache *TxCache) AsMessage(msg *evmtypes.MsgEthereumTx, signer ethtypes.Signer, baseFee *big.Int) (core.Message, error) {
 	txData, err := types.UnpackTxData(msg.Data)
 	if err != nil {
-		return nil, nil
+		return nil, err
 	}
 
 	tx := ethtypes.NewTx(txData.AsEthereumData())
-	from, err := ethtypes.Sender(signer, tx)
+	var from common.Address
+	if value, ok := txCache.HashMap[msg.Hash]; ok {
+		from = value.Signer
+	} else {
+		from, err = ethtypes.Sender(signer, tx)
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	var gasPrice, gasTipCap, gasFeeCap *big.Int
 	gasPrice = new(big.Int).Set(tx.GasPrice())

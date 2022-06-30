@@ -2,11 +2,10 @@ package ante
 
 import (
 	"errors"
-	"math/big"
-
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
 	authante "github.com/cosmos/cosmos-sdk/x/auth/ante"
+	"math/big"
 
 	ethermint "github.com/tharsis/ethermint/types"
 	evmkeeper "github.com/tharsis/ethermint/x/evm/keeper"
@@ -281,7 +280,7 @@ func (ctd CanTransferDecorator) AnteHandle(ctx sdk.Context, tx sdk.Tx, simulate 
 		}
 
 		baseFee := ctd.evmKeeper.BaseFee(ctx, ethCfg)
-		coreMsg, err := AsMessage(msgEthTx, signer, baseFee)
+		coreMsg, err := ctd.txCache.AsMessage(msgEthTx, signer, baseFee)
 
 		if err != nil {
 			return ctx, sdkerrors.Wrapf(
