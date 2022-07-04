@@ -12,25 +12,30 @@ import (
 )
 
 type TxCache struct {
-	HashMap map[string]TxCacheObject
-	ChainId *big.Int
-	EthCfg  *params.ChainConfig
-	TxCap   int32
-}
-
-func NewTxCache() *TxCache {
-	return &TxCache{
-		HashMap: make(map[string]TxCacheObject),
-		TxCap:   5000}
+	HashMap         map[string]*TxCacheObject
+	ChainId         *big.Int
+	EthCfg          *params.ChainConfig
+	TxCap           int32
+	AnteHandlerStep int
+	Params          evmtypes.Params
 }
 
 type TxCacheObject struct {
 	Data   string
 	Signer common.Address
+	TxData evmtypes.TxData
 }
 
-func NewTxCacheObject(from common.Address) TxCacheObject {
-	return TxCacheObject{
+func NewTxCache() *TxCache {
+	return &TxCache{
+		HashMap:         make(map[string]*TxCacheObject),
+		TxCap:           5000,
+		AnteHandlerStep: 0,
+	}
+}
+
+func NewTxCacheObject(from common.Address) *TxCacheObject {
+	return &TxCacheObject{
 		Data:   "",
 		Signer: from,
 	}
